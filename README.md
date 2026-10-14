@@ -26,7 +26,7 @@ Prototype asisten AI customer service e-commerce yang menjawab pertanyaan pelang
 | **Embed** | Setiap unit `content` diubah menjadi vector embedding menggunakan Gemini Embeddings API (`gemini-embedding-001`). |
 | **Store** | Seluruh embedding disimpan ke index FAISS (`IndexFlatL2`), jumlah vektor diverifikasi sama dengan jumlah entri knowledge base. |
 | **Retrieve** | Query pengguna diembed dengan model yang sama, dicari top-k entri FAQ terdekat di index FAISS berdasarkan L2 distance. |
-| **Generate** | Hasil retrieval disisipkan sebagai *context* ke dalam prompt terstruktur (Persona, Task, Context, Format), dikirim ke Gemini (`gemini-2.5-flash`) untuk menghasilkan jawaban natural. Prompt mengarahkan LLM untuk menjawab hanya dari context dan mengakui ketidaktahuan bila informasi tidak tersedia. |
+| **Generate** | Hasil retrieval disisipkan sebagai *context* ke dalam prompt terstruktur (Persona, Task, Context, Format), dikirim ke Gemini (`gemini-flash-lite-latest`) untuk menghasilkan jawaban natural. Prompt mengarahkan LLM untuk menjawab hanya dari context dan mengakui ketidaktahuan bila informasi tidak tersedia. |
 
 Seluruh pipeline digabung dalam fungsi `generate_answer(query)` yang menjalankan: query → retrieval (semantic search) → prompt building → LLM call → jawaban.
 
@@ -34,21 +34,20 @@ Seluruh pipeline digabung dalam fungsi `generate_answer(query)` yang menjalankan
 
 Diuji dengan 6 query: 2 direct match, 3 paraphrase/sinonim, 1 di luar knowledge base.
 
-| # | Query | Tipe | FAQ Teratas yang Ditemukan | Relevan? |
-| :-- | :---- | :---- | :---- | :---- |
-| 1 | Berapa lama estimasi waktu pengiriman barang? | Direct | *(isi setelah run notebook)* | |
-| 2 | Apakah member baru mendapat diskon khusus? | Direct | | |
-| 3 | Barang saya belum sampai juga padahal udah lewat estimasi, itu kenapa ya? | Paraphrase | | |
-| 4 | Bisa nggak sih bayar belanjaan pakai cicilan kartu kredit? | Paraphrase | | |
-| 5 | Duit di rekening saya udah kepotong tapi status pesanan masih belum dibayar, kenapa tuh? | Paraphrase | | |
-| 6 | Apakah platform ini menyediakan opsi investasi reksadana untuk pembeli? | Tidak ada di KB | | |
-
-> **Catatan**: Isi kolom "FAQ Teratas" dan "Relevan?" setelah menjalankan `notebook/starter_notebook_semantic_search.ipynb` dari awal hingga akhir, lalu tuliskan analisis di bawah ini berdasarkan output aktual (lihat juga cell "Catatan Analisis Relevansi" di notebook).
+| # | Query | Tipe | FAQ Teratas yang Ditemukan | Distance | Relevan? |
+| :-- | :---- | :---- | :---- | :---- | :---- |
+| 1 | Berapa lama estimasi waktu pengiriman barang? | Direct | Berapa lama estimasi waktu pengiriman barang? | 0.195 | Ya |
+| 2 | Apakah member baru mendapat diskon khusus? | Direct | Apakah member baru mendapat diskon khusus? | 0.188 | Ya |
+| 3 | Barang saya belum sampai juga padahal udah lewat estimasi, itu kenapa ya? | Paraphrase | Bagaimana jika paket saya belum sampai melebihi estimasi? | 0.257 | Ya |
+| 4 | Bisa nggak sih bayar belanjaan pakai cicilan kartu kredit? | Paraphrase | Apakah saya bisa membayar dengan cicilan? | 0.217 | Ya |
+| 5 | Duit di rekening saya udah kepotong tapi status pesanan masih belum dibayar, kenapa tuh? | Paraphrase | Kenapa pembayaran saya berhasil dipotong tapi status pesanan masih belum terbayar? | 0.243 | Ya |
+| 6 | Apakah platform ini menyediakan opsi investasi reksadana untuk pembeli? | Tidak ada di KB | Bagaimana cara melakukan pemesanan di platform ini? | 0.681 | Tidak (sesuai ekspektasi) |
 
 **Analisis**:
-- *(isi: query mana yang retrieval-nya akurat — biasanya direct match dan paraphrase berhasil karena embedding menangkap makna semantik, bukan hanya kata kunci)*
-- *(isi: query mana yang kurang relevan, jika ada, dan kemungkinan sebabnya)*
-- *(isi: bagaimana kualitas jawaban LLM pada query yang tidak ada di knowledge base — apakah LLM mengakui ketidaktahuan dengan baik atau justru berhalusinasi)*
+- **Direct match (#1-2)**: Keduanya berhasil retrieve FAQ yang identik persis dengan pertanyaan asli, distance sangat kecil (~0.19). Hasil ini jadi baseline: ketika query sangat mirip kata-katanya dengan FAQ, distance selalu rendah artinya mirip/relevan.
+- **Paraphrase/sinonim (#3-5)**: Ketiganya tetap berhasil menemukan FAQ yang benar secara makna meskipun kata-katanya berbeda atau jauh berbeda dari FAQ asli — bahkan query #5 memakai bahasa sangat informal ("duit", "kepotong", "tuh") dan tetap match ke FAQ "Kenapa pembayaran saya berhasil dipotong tapi status pesanan masih belum terbayar?" dengan distance 0.243. Ini membuktikan semantic search berhasil menangkap makna, bukan sekadar mencocokkan kata kunci, dan distance-nya hanya sedikit lebih tinggi dari query yang direct match (0.21-0.26 vs 0.19) masih dibawah 0.5, bukan melonjak jauh.
+- **Di luar knowledge base (#6)**: Pertanyaan soal investasi reksadana tidak ada hubungannya dengan FAQ e-commerce manapun. Distance FAQ teratas melonjak ke 0.681 (lebih dari 0.5), jauh lebih besar dibanding 5 query lain (semua di bawah 0.5 bahkan di bawah 0.3). Ini jadi sinyal yang jelas: ketika distance jauh lebih tinggi dari biasanya, kemungkinan besar tidak ada jawaban relevan di knowledge base. Tapi di sini LLM merespons dengan baik: mengakui tidak memiliki informasi tersebut dan menyarankan menghubungi customer service, tanpa mengarang jawaban (tidak halusinasi) dimana sesuai instruksi prompt di bagian TASK (masih sesuai ekspektasi).
+- **Kesimpulan**: Sistem semantic search bekerja baik untuk direct match maupun paraphrase — tidak hanya cocok kata kunci, tapi benar-benar menangkap makna. Ada pola yang berguna: distance di bawah ~0.3 cenderung berarti ada jawaban relevan di Knowledge Base, sedangkan distance di atas ~0.6 mengindikasikan pertanyaan di luar cakupan Knowledge Base. Namun ini pola empiris dari 6 sampel, bukan threshold yang sudah divalidasi secara statistik karena perlu lebih banyak data uji untuk menentukan ambang batas yang andal. Prompt design (instruksi eksplisit untuk menjawab hanya dari context dan mengaku tidak tahu bila informasi tidak tersedia) berhasil mencegah LLM berhalusinasi pada query di luar Knowledge Base.
 
 ## 4. Keterbatasan Sistem
 
