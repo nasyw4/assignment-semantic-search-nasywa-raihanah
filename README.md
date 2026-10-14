@@ -30,6 +30,8 @@ Prototype asisten AI customer service e-commerce yang menjawab pertanyaan pelang
 
 Seluruh pipeline digabung dalam fungsi `generate_answer(query)` yang menjalankan: query → retrieval (semantic search) → prompt building → LLM call → jawaban.
 
+**Catatan pemilihan model LLM**: Awalnya dicoba model `gemini-2.5-flash` dan `gemini-3.8-flash`, namun keduanya sempat mengembalikan error `503 UNAVAILABLE` karena API Gemini sedang mengalami lonjakan permintaan (high demand) saat pengujian dilakukan. Sebagai solusi, dicoba beberapa model alternatif yang lebih ringan (*lite*) hingga akhirnya dipilih `gemini-flash-lite-latest` yang lebih stabil dan jarang terkena rate limit/overload, dengan kualitas jawaban yang tetap memadai untuk kebutuhan FAQ assistant ini. Fungsi `generate_answer` juga dilengkapi mekanisme retry otomatis (3x percobaan dengan jeda) untuk menangani error sementara seperti ini.
+
 ## 3. Hasil Pengujian & Analisis Relevansi
 
 Diuji dengan 6 query: 2 direct match, 3 paraphrase/sinonim, 1 di luar knowledge base.
